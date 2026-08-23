@@ -1,0 +1,94 @@
+name: RDP
+
+on:
+  workflow_dispatch:
+
+jobs:
+  secure-rdp:
+    runs-on: windows-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Configure RDP
+        shell: powershell
+        run: |
+          Set-ItemProperty `
+            -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' `
+            -Name 'fDenyTSConnections' -Value 0 -Force
+
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+
+          Restart-Service -Name TermService -Force
+
+      - name: Create RDP User
+        shell: powershell
+        run: |
+          $password = ConvertTo-SecureString "royalplayz" -AsPlainText -Force
+
+          if (Get-LocalUser -Name "royalplayz" -ErrorAction SilentlyContinue) {
+            Set-LocalUser -Name "royalplayz" -Password $password
+          }
+          else {
+            New-LocalUser `
+              -Name "royalplayz" `
+              -Password $password `
+              -AccountNeverExpires
+          }
+
+          Add-LocalGroupMember `
+            -Group "Administrators" `
+            -Member "royalplayz" `
+            -ErrorAction SilentlyContinue
+
+          Add-LocalGroupMember `
+            -Group "Remote Desktop Users" `
+            -Member "royalplayz" `
+            -ErrorAction SilentlyContinue
+
+      - name: Install Tailscale
+        shell: powershell
+        run: |
+          $installerPath = "$env:TEMP\tailscale.msi"
+
+          Invoke-WebRequest `
+            -Uri "https://pkgs.tailscale.com/stable/tailscale-setup-latest-amd64.msi" `
+            -OutFile $installerPath
+
+          Start-Process msiexec.exe `
+            -ArgumentList "/i", "`"$installerPath`"", "/quiet", "/norestart" `
+            -Wait
+
+          Remove-Item $installerPath -Force
+
+      - name: Connect Tailscale
+        shell: powershell
+        run: |
+          & "$env:ProgramFiles\Tailscale\tailscale.exe" up `
+            --authkey="${{ secrets.TAILSCALE_AUTH_KEY }}" `
+            --hostname=royalplayz
+
+          Start-Sleep -Seconds 5
+
+          $tsIP = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
+
+          if (-not $tsIP) {
+            Write-Error "Tailscale IP was not assigned."
+            exit 1
+          }
+
+          Write-Host "Tailscale IP: $tsIP"
+          Write-Host "Hostname: royalplayz"
+
+      - name: Keep RDP Active
+        shell: powershell
+        run: |
+          Write-Host "=========================="
+          Write-Host "RDP IS READY"
+          Write-Host "Address: royalplayz"
+          Write-Host "Username: royalplayz"
+          Write-Host "Password: royalplayz"
+          Write-Host "=========================="
+
+          while ($true) {
+            Start-Sleep -Seconds 300
+          }
