@@ -12,24 +12,32 @@ jobs:
       - name: Configure RDP
         shell: powershell
         run: |
+          # Enable Remote Desktop
           Set-ItemProperty `
             -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' `
             -Name 'fDenyTSConnections' `
             -Value 0 `
             -Force
 
+          # Enable Windows Firewall RDP rules
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+
+          # Restart Remote Desktop service
           Restart-Service -Name TermService -Force
 
       - name: Create RDP User
         shell: powershell
         run: |
-          $password = ConvertTo-SecureString "RoyalPlayz#2026Secure!" -AsPlainText -Force
+          # Fixed password
+          $password = ConvertTo-SecureString "Sky#4829Moon!X" -AsPlainText -Force
 
+          # Check whether the user already exists
           $user = Get-LocalUser -Name "royalplayz" -ErrorAction SilentlyContinue
 
           if ($user) {
-              Set-LocalUser -Name "royalplayz" -Password $password
+              Set-LocalUser `
+                -Name "royalplayz" `
+                -Password $password
           }
           else {
               New-LocalUser `
@@ -38,11 +46,13 @@ jobs:
                 -AccountNeverExpires
           }
 
+          # Add user to Administrators
           Add-LocalGroupMember `
             -Group "Administrators" `
             -Member "royalplayz" `
             -ErrorAction SilentlyContinue
 
+          # Allow Remote Desktop access
           Add-LocalGroupMember `
             -Group "Remote Desktop Users" `
             -Member "royalplayz" `
@@ -70,31 +80,57 @@ jobs:
         run: |
           $tailscale = "$env:ProgramFiles\Tailscale\tailscale.exe"
 
+          # Connect using fixed hostname
           & $tailscale up `
             --authkey="${{ secrets.TAILSCALE_AUTH_KEY }}" `
             --hostname=royalplayz
 
           Start-Sleep -Seconds 10
 
+          # Get Tailscale IPv4 address
           $tsIP = & $tailscale ip -4
 
           if (-not $tsIP) {
-            Write-Error "Tailscale IP was not assigned."
-            exit 1
+              Write-Error "Tailscale IP was not assigned."
+              exit 1
           }
 
+          Write-Host ""
           Write-Host "=========================="
-          Write-Host "RDP IS READY"
+          Write-Host "TAILSCALE CONNECTED"
           Write-Host "Hostname: royalplayz"
-          Write-Host "Tailscale IP: $tsIP"
-          Write-Host "Username: royalplayz"
+          Write-Host "IP: $tsIP"
           Write-Host "=========================="
+
+      - name: Verify RDP
+        shell: powershell
+        run: |
+          # Verify local RDP service is listening
+          $rdp = Get-NetTCPConnection `
+            -LocalPort 3389 `
+            -State Listen `
+            -ErrorAction SilentlyContinue
+
+          if (-not $rdp) {
+              Write-Error "RDP is not listening on port 3389."
+              exit 1
+          }
+
+          Write-Host "RDP port 3389 is listening."
 
       - name: Keep RDP Active
         shell: powershell
         run: |
+          Write-Host ""
+          Write-Host "=========================="
+          Write-Host "RDP IS READY"
+          Write-Host "Address: royalplayz"
+          Write-Host "Username: royalplayz"
+          Write-Host "Password: Sky#4829Moon!X"
+          Write-Host "=========================="
+          Write-Host ""
+
           while ($true) {
               Write-Host "[$(Get-Date)] RDP Active"
               Start-Sleep -Seconds 300
-          }              Start-Sleep -Seconds 300
           }
