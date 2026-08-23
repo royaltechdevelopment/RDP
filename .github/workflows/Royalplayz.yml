@@ -19,20 +19,17 @@ jobs:
             -Force
 
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-
           Restart-Service -Name TermService -Force
 
       - name: Create RDP User
         shell: powershell
         run: |
-          $password = ConvertTo-SecureString "RoyalPlayz@2026!" -AsPlainText -Force
+          $password = ConvertTo-SecureString "RoyalPlayz#2026Secure!" -AsPlainText -Force
 
           $user = Get-LocalUser -Name "royalplayz" -ErrorAction SilentlyContinue
 
           if ($user) {
-              Set-LocalUser `
-                -Name "royalplayz" `
-                -Password $password
+              Set-LocalUser -Name "royalplayz" -Password $password
           }
           else {
               New-LocalUser `
@@ -87,24 +84,17 @@ jobs:
           }
 
           Write-Host "=========================="
-          Write-Host "TAILSCALE CONNECTED"
+          Write-Host "RDP IS READY"
           Write-Host "Hostname: royalplayz"
-          Write-Host "IP: $tsIP"
+          Write-Host "Tailscale IP: $tsIP"
+          Write-Host "Username: royalplayz"
           Write-Host "=========================="
 
       - name: Keep RDP Active
         shell: powershell
         run: |
-          Write-Host ""
-          Write-Host "=========================="
-          Write-Host "RDP IS READY"
-          Write-Host "Address: royalplayz"
-          Write-Host "Username: royalplayz"
-          Write-Host "Password: RoyalPlayz@2026!"
-          Write-Host "=========================="
-          Write-Host ""
-
           while ($true) {
               Write-Host "[$(Get-Date)] RDP Active"
               Start-Sleep -Seconds 300
+          }              Start-Sleep -Seconds 300
           }
