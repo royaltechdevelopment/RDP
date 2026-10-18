@@ -1,0 +1,114 @@
+name: Temporary Ubuntu VPS with Drive Backup
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ubuntu-vps:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Install SSH and Tailscale
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y openssh-server curl python3-pip
+          curl -fsSL https://tailscale.com/install.sh | sh
+          sudo systemctl enable --now ssh
+
+      - name: Configure SSH password
+        env:
+          VPS_PASSWORD: ${{ secrets.VPS_PASSWORD }}
+        run: |
+          if [ -z "$VPS_PASSWORD" ]; then
+            echo "Missing VPS_PASSWORD secret"
+            exit 1
+          fi
+          printf 'runner:%s\n' "$VPS_PASSWORD" | sudo chpasswd
+          echo "PasswordAuthentication yes" | sudo tee /etc/ssh/sshd_config.d/99-vps.conf
+          echo "PermitRootLogin no" | sudo tee -a /etc/ssh/sshd_config.d/99-vps.conf
+          echo "AllowUsers runner" | sudo tee -a /etc/ssh/sshd_config.d/99-vps.conf
+          sudo sshd -t
+          sudo systemctl restart ssh
+
+      - name: Connect Tailscale
+        env:
+          TS_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
+        run: |
+          sudo tailscale up \
+            --auth-key="$TS_AUTHKEY" \
+            --hostname="github-ubuntu-vps" \
+            --accept-dns=false
+          echo "Tailscale IP:"
+          tailscale ip -4
+
+      - name: Wait until backup window
+        run: sleep 21000
+
+      - name: Install Google Drive SDK
+        env:
+          GOOGLE_SERVICE_ACCOUNT: ${{ secrets.GDRIVE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          python3 -m pip install --user --break-system-packages google-api-python-client google-auth
+          printf '%s' "$GOOGLE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/service-account.json"
+          chmod 600 "$RUNNER_TEMP/service-account.json"
+
+      - name: Create backup and upload to Drive
+        env:
+          GOOGLE_SERVICE_ACCOUNT: ${{ secrets.GDRIVE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          set -euo pipefail
+          export SA_FILE="$RUNNER_TEMP/service-account.json"
+          export BACKUP_FILE="$RUNNER_TEMP/ubuntu-backup-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
+
+          sudo tar --ignore-failed-read -czf "$BACKUP_FILE" \
+            --exclude=proc --exclude=sys --exclude=dev \
+            --exclude=run --exclude=tmp \
+            /var /root /opt /tmp /etc
+
+          python3 - <<'PY'
+          import os, json
+          from google.oauth2 import service_account
+          from googleapiclient.discovery import build
+          from googleapiclient.http import MediaFileUpload
+
+          creds = service_account.Credentials.from_service_account_file(
+              os.environ["SA_FILE"],
+              scopes=["https://www.googleapis.com/auth/drive"]
+          )
+          drive = build("drive", "v3", credentials=creds)
+
+          folder_name = "Ubuntu-VPS-Backups"
+          found = drive.files().list(
+              q="name='" + folder_name + "' and mimeType='application/vnd.google-apps.folder' and trashed=false",
+              fields="files(id,name)"
+          ).execute().get("files", [])
+
+          if found:
+              folder_id = found[0]["id"]
+          else:
+              folder = drive.files().create(
+                  body={"name": folder_name, "mimeType": "application/vnd.google-apps.folder"},
+                  fields="id"
+              ).execute()
+              folder_id = folder["id"]
+
+          media = MediaFileUpload(
+              os.environ["BACKUP_FILE"],
+              mimetype="application/gzip",
+              resumable=True
+          )
+          result = drive.files().create(
+              body={
+                  "name": os.path.basename(os.environ["BACKUP_FILE"]),
+                  "parents": [folder_id]
+              },
+              media_body=media,
+              fields="id,name"
+          ).execute()
+          print("Uploaded backup:", result["name"])
+          print("Drive file ID:", result["id"])
+          PY
