@@ -36,7 +36,7 @@ jobs:
 
       - name: Connect Tailscale
         env:
-          TS_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
+          TS_AUTHKEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
         run: |
           sudo tailscale up \
             --auth-key="$TS_AUTHKEY" \
