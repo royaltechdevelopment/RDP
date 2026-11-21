@@ -1,4 +1,4 @@
-name: Temporary Ubuntu VPS
+name: Temporary Ubuntu VPSg
 
 on:
   workflow_dispatch:
